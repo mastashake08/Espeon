@@ -25,9 +25,9 @@ if [ -f ".venv/bin/activate" ]; then
     echo "Using Python $PYTHON_VERSION"
 fi
 
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <serial_port> <meshtastic.bin> <lorable.bin>"
-    echo "Example: $0 /dev/cu.usbserial-0001 Meshtastic.bin LoRABLE.bin"
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <serial_port> <meshtastic.bin> <lorable.bin> <wifiap.bin>"
+    echo "Example: $0 /dev/cu.usbserial-0001 Meshtastic.bin LoRABLE.bin WifiAP.bin"
     exit 1
 fi
 
