@@ -27,8 +27,11 @@ This project implements a multi-partition boot system that allows you to store m
 
 ## Features
 
+## Features
+
 - **PRG Button Navigation**: Single-click to navigate through applications
-- **Double-Click Loading**: Double-click to boot into selected application
+- **Double-Click Loading**: Double-click to boot into selected application with confirmation
+- **Return to Factory**: Hold PRG button during boot to return to factory menu
 - **OLED Display**: Visual menu with battery voltage display
 - **Partition Validation**: Checks partition integrity before switching
 - **Error Handling**: Visual feedback for errors and invalid partitions
@@ -38,11 +41,49 @@ This project implements a multi-partition boot system that allows you to store m
 
 ### Controls
 
-- **Single Click PRG Button**: Navigate through available applications
-- **Double Click PRG Button**: Load and boot the selected application
-- **Menu Display**: Shows application name and navigation instructions
+- **Single Click PRG Button**: Navigate through available applications (or cancel confirmation)
+- **Double Click PRG Button**: Show confirmation popup, then load selected application
+- **Hold PRG During Boot**: Return to factory menu from any loaded application
 
-The factory menu will always be accessible - if an application needs to return to the menu, it can set the boot partition back to "factory" and reboot.
+### Returning to Factory Menu
+
+**Important:** Once you load an application, it becomes the boot partition. To return to factory menu, you have these options:
+
+**Option 1: Use esptool (Most Reliable)**
+```bash
+# Set factory as boot partition via USB
+esptool.py --chip esp32s3 --port /dev/cu.usbserial-XXXX write_flash 0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
+```
+
+Or use the provided script:
+```bash
+./reset_to_factory.sh /dev/cu.usbserial-XXXX
+```
+
+**Option 2: Modify Application Binaries**
+
+Add factory return code to your applications:
+
+1. Copy [include/FactoryReturn.h](include/FactoryReturn.h) to your app
+2. Add one line to the start of your `setup()`:
+
+```cpp
+#include "FactoryReturn.h"
+
+void setup() {
+  checkFactoryReturn();  // Add this as the FIRST line
+  
+  // ... rest of your setup
+}
+```
+
+Then rebuild and re-upload your application binaries. Now you can hold PRG during boot to return to factory.
+
+**Why This is Necessary:**
+
+The ESP32 can only boot ONE partition at a time. When you load Meshtastic or LoRABLE, that app becomes the boot partition and runs on every reset. The factory menu doesn't run again unless you change the boot partition back (via esptool) or the loaded app checks for a return request (which requires modifying the app).
+
+See [RETURN_TO_FACTORY.md](RETURN_TO_FACTORY.md) for detailed instructions.
 
 ## Building & Uploading
 

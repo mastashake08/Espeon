@@ -2,12 +2,28 @@
 #include <heltec_unofficial.h>
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include <Wire.h>
+#include <Preferences.h>
 
 // Button configuration
 #define PRG_BUTTON 0
 #define DEBOUNCE_DELAY 50
-#define DOUBLE_CLICK_DELAY 300
-#define LONG_PRESS_DELAY 2000
+#define DOUBLE_CLICK_WINDOW 400
+#define LONG_PRESS_DELAY 3000  // 3 seconds for returning to menu
+
+// Display control
+#define VEXT_CTRL 36  // Display power control
+#define OLED_SDA 17
+#define OLED_SCL 18
+
+// NVS keys for boot management
+#define BOOT_NAMESPACE "espeon"
+#define CURRENT_APP_KEY "current_app"
+#define RETURN_REQUEST_KEY "return_req"
+
+// RTC memory to track resets (persists across reboots)
+RTC_DATA_ATTR uint32_t rtcBootCount = 0;
+RTC_DATA_ATTR uint64_t rtcLastBootTime = 0;
 
 // Menu structure
 struct AppPartition {
@@ -26,15 +42,15 @@ const int numPartitions = sizeof(appPartitions) / sizeof(AppPartition);
 // Menu state
 int selectedIndex = 0;
 bool needsRedraw = true;
+bool showingConfirmation = false;
 
-// Button state
-enum ButtonState { IDLE, PRESSED, RELEASED, SINGLE_CLICK, DOUBLE_CLICK, LONG_PRESS };
-ButtonState buttonState = IDLE;
-unsigned long buttonPressTime = 0;
-unsigned long buttonReleaseTime = 0;
+// Button state - simplified approach
+unsigned long lastPressTime = 0;
+unsigned long lastReleaseTime = 0;
+unsigned long pressStartTime = 0;
+bool wasPressed = false;
+bool waitingForSecondClick = false;
 int clickCount = 0;
-bool lastButtonState = HIGH;
-unsigned long lastDebounceTime = 0;
 
 // Forward declaration
 void loadPartition(const char* label);
@@ -44,7 +60,7 @@ void drawMenu() {
   
   // Title
   display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 0, "Factory Menu");
+  display.drawString(0, 0, "Shake Loader");
   display.drawHorizontalLine(0, 12, 128);
   
   // Battery voltage
@@ -76,77 +92,114 @@ void drawMenu() {
   
   // Instructions at bottom
   display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 52, "Click:Nav  2x:Load");
+  if (showingConfirmation) {
+    display.drawString(0, 52, "Click:Cancel 2x:OK");
+  } else {
+    display.drawString(0, 52, "Click:Nav  2x:Load");
+  }
   
   display.display();
   needsRedraw = false;
 }
 
+void showConfirmation() {
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  
+  // Title
+  display.drawString(0, 0, "Load Partition?");
+  display.drawHorizontalLine(0, 12, 128);
+  
+  // Selected app name
+  display.setFont(ArialMT_Plain_16);
+  int width = display.getStringWidth(appPartitions[selectedIndex].name);
+  int x = (128 - width) / 2;
+  display.drawString(x, 20, appPartitions[selectedIndex].name);
+  
+  // Instructions
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(5, 42, "Double-click: Confirm");
+  display.drawString(5, 54, "Single-click: Cancel");
+  
+  display.display();
+}
+
 void handleButtonPress() {
-  bool reading = digitalRead(PRG_BUTTON) == LOW;
+  bool isPressed = (digitalRead(PRG_BUTTON) == LOW);
   unsigned long currentTime = millis();
   
-  // Debounce
-  if (reading != lastButtonState) {
-    lastDebounceTime = currentTime;
+  // Detect button press (not pressed -> pressed)
+  if (isPressed && !wasPressed) {
+    pressStartTime = currentTime;
+    wasPressed = true;
+    Serial.println("Button pressed");
   }
   
-  if ((currentTime - lastDebounceTime) > DEBOUNCE_DELAY) {
-    // Button pressed
-    if (reading && buttonState == IDLE) {
-      buttonState = PRESSED;
-      buttonPressTime = currentTime;
-    }
+  // Detect button release (pressed -> not pressed)
+  if (!isPressed && wasPressed) {
+    unsigned long pressDuration = currentTime - pressStartTime;
+    wasPressed = false;
     
     // Check for long press
-    if (reading && buttonState == PRESSED) {
-      if ((currentTime - buttonPressTime) > LONG_PRESS_DELAY) {
-        buttonState = LONG_PRESS;
-        // Handle long press (optional feature)
-        Serial.println("Long press detected");
+    if (pressDuration > LONG_PRESS_DELAY) {
+      Serial.println("Long press detected");
+      // Optional: Add long press functionality
+      return;
+    }
+    
+    // Regular click detected
+    lastReleaseTime = currentTime;
+    clickCount++;
+    Serial.printf("Click registered (count: %d)\n", clickCount);
+    
+    if (clickCount == 1) {
+      // First click - start waiting for potential second click
+      waitingForSecondClick = true;
+      Serial.println("Waiting for second click...");
+    }
+  }
+  
+  // Check if we're waiting for a second click
+  if (waitingForSecondClick && (currentTime - lastReleaseTime > DOUBLE_CLICK_WINDOW)) {
+    // Timeout - it was a single click
+    if (clickCount == 1) {
+      Serial.println("Single click confirmed");
+      
+      if (showingConfirmation) {
+        // Cancel confirmation
+        showingConfirmation = false;
+        needsRedraw = true;
+        Serial.println("Confirmation cancelled");
+      } else {
+        // Navigate menu
+        selectedIndex = (selectedIndex + 1) % numPartitions;
+        needsRedraw = true;
+        Serial.printf("Selected: %s\n", appPartitions[selectedIndex].name);
       }
     }
     
-    // Button released
-    if (!reading && buttonState == PRESSED) {
-      buttonState = RELEASED;
-      buttonReleaseTime = currentTime;
-      clickCount++;
+    clickCount = 0;
+    waitingForSecondClick = false;
+  }
+  
+  // Check for double click
+  if (clickCount >= 2) {
+    Serial.println("Double click detected!");
+    
+    if (showingConfirmation) {
+      // Confirm and load partition
+      Serial.printf("Loading partition: %s\n", appPartitions[selectedIndex].label);
+      showingConfirmation = false;
+      loadPartition(appPartitions[selectedIndex].label);
+    } else {
+      // Show confirmation
+      showingConfirmation = true;
+      showConfirmation();
+      Serial.println("Showing confirmation dialog");
     }
-  }
-  
-  lastButtonState = reading;
-  
-  // Process click events
-  if (buttonState == RELEASED) {
-    if ((currentTime - buttonReleaseTime) > DOUBLE_CLICK_DELAY) {
-      if (clickCount == 1) {
-        buttonState = SINGLE_CLICK;
-      } else if (clickCount >= 2) {
-        buttonState = DOUBLE_CLICK;
-      }
-      clickCount = 0;
-    }
-  }
-  
-  // Handle single click - navigate menu
-  if (buttonState == SINGLE_CLICK) {
-    selectedIndex = (selectedIndex + 1) % numPartitions;
-    needsRedraw = true;
-    Serial.printf("Selected: %s\n", appPartitions[selectedIndex].name);
-    buttonState = IDLE;
-  }
-  
-  // Handle double click - load partition
-  if (buttonState == DOUBLE_CLICK) {
-    Serial.printf("Loading partition: %s\n", appPartitions[selectedIndex].label);
-    loadPartition(appPartitions[selectedIndex].label);
-    buttonState = IDLE;
-  }
-  
-  // Reset long press
-  if (buttonState == LONG_PRESS && !reading) {
-    buttonState = IDLE;
+    
+    clickCount = 0;
+    waitingForSecondClick = false;
   }
 }
 
@@ -189,6 +242,16 @@ void loadPartition(const char* label) {
     return;
   }
   
+  // Save this as the current/default app in NVS
+  Preferences prefs;
+  prefs.begin(BOOT_NAMESPACE, false);
+  prefs.putString(CURRENT_APP_KEY, label);
+  prefs.putUInt("boot_count", 0);  // Reset boot counter
+  prefs.end();
+  
+  Serial.printf("Saved '%s' as default app\n", label);
+  Serial.println("Tip: Reset 3 times quickly to return to factory menu");
+  
   // Set boot partition and restart
   err = esp_ota_set_boot_partition(partition);
   if (err == ESP_OK) {
@@ -214,13 +277,108 @@ void setup() {
   delay(100);
   Serial.println("\n=== Factory Menu Application ===");
   
-  // Initialize Heltec board
-  heltec_setup();
-  
-  // Initialize PRG button
+  // Initialize PRG button FIRST (before anything else)
   pinMode(PRG_BUTTON, INPUT_PULLUP);
+  delay(50);
+  
+  // Check for PRG button held during boot (force return to factory)
+  bool buttonHeld = (digitalRead(PRG_BUTTON) == LOW);
+  
+  // Initialize Preferences for boot management
+  Preferences prefs;
+  prefs.begin(BOOT_NAMESPACE, false);
+  
+  // Use RTC memory to track rapid resets (survives soft reset)
+  uint64_t currentBootTime = esp_timer_get_time() / 1000000;  // Convert to seconds
+  bool rapidReset = false;
+  
+  // Check if this boot happened within 10 seconds of last boot
+  if (rtcLastBootTime > 0 && (currentBootTime - rtcLastBootTime) < 10) {
+    rtcBootCount++;
+    rapidReset = true;
+    Serial.printf("Rapid reset detected! Count: %d (within %llu seconds)\n", 
+                  rtcBootCount, currentBootTime - rtcLastBootTime);
+  } else {
+    // More than 10 seconds since last boot - reset counter
+    rtcBootCount = 1;
+    rapidReset = false;
+    Serial.println("Normal boot - reset counter cleared");
+  }
+  
+  rtcLastBootTime = currentBootTime;
+  
+  // Check if user is requesting return to factory (3+ rapid resets OR button held)
+  bool forceFactoryMode = (rtcBootCount >= 3) || buttonHeld;
+  
+  if (forceFactoryMode) {
+    if (buttonHeld) {
+      Serial.println("\n!!! PRG BUTTON HELD - FORCING FACTORY MODE !!!");
+    }
+    if (rtcBootCount >= 3) {
+      Serial.printf("\n!!! %d RAPID RESETS DETECTED - FORCING FACTORY MODE !!!\n", rtcBootCount);
+    }
+    
+    // Clear counters and stay in factory
+    rtcBootCount = 0;
+    prefs.putString(CURRENT_APP_KEY, "");  // Clear any default app
+    prefs.end();
+    
+    // Continue with factory menu initialization below...
+  } else {
+    // Check if there's a default app to auto-load
+    String defaultApp = prefs.getString(CURRENT_APP_KEY, "");
+    prefs.end();
+    
+    if (defaultApp.length() > 0 && rtcBootCount < 3) {
+      Serial.printf("Auto-loading default app: %s\n", defaultApp.c_str());
+      Serial.println("(Reset 3 times quickly to return to menu)");
+      
+      // Give user 2 seconds to see the message, then load app
+      delay(2000);
+      
+      // Load the default app
+      const esp_partition_t* partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP,
+        ESP_PARTITION_SUBTYPE_ANY,
+        defaultApp.c_str()
+      );
+      
+      if (partition != NULL) {
+        esp_ota_set_boot_partition(partition);
+        Serial.println("Rebooting to default app...");
+        delay(500);
+        esp_restart();
+      } else {
+        Serial.println("ERROR: Default app partition not found!");
+        Serial.println("Staying in factory menu");
+        delay(2000);
+      }
+    }
+  }
+  
+  // If we get here, we're staying in factory menu
+  rtcBootCount = 0;  // Reset RTC counter when staying in menu
+  prefs.begin(BOOT_NAMESPACE, false);
+  prefs.end();
+  
+  // Get current running partition
+  const esp_partition_t* current = esp_ota_get_running_partition();
+  
+  // Power on display (VEXT_CTRL must be LOW for display power)
+  pinMode(VEXT_CTRL, OUTPUT);
+  digitalWrite(VEXT_CTRL, LOW);
+  delay(100);
+  
+  // Initialize I2C for display
+  Wire.begin(OLED_SDA, OLED_SCL);
+  delay(100);
+  
+  // Initialize Heltec board (this sets up display and other peripherals)
+  heltec_setup();
+  delay(100);
   
   // Display welcome screen
+  Serial.println("Displaying welcome screen...");
   display.clear();
   display.setFont(ArialMT_Plain_16);
   display.drawString(35, 15, "Espeon");
@@ -230,7 +388,6 @@ void setup() {
   delay(2000);
   
   // Print current partition info
-  const esp_partition_t* current = esp_ota_get_running_partition();
   Serial.printf("Running from partition: %s\n", current->label);
   
   // Print available partitions
@@ -249,9 +406,13 @@ void setup() {
   }
   esp_partition_iterator_release(it);
   
-  Serial.println("\nMenu Controls:");
+  Serial.println("\n==================================");
+  Serial.println("Menu Controls:");
   Serial.println("  Single Click: Navigate");
   Serial.println("  Double Click: Load Partition");
+  Serial.println("\nReturn to Factory Menu:");
+  Serial.println("  Hold PRG during boot/reset");
+  Serial.println("==================================\n");
   
   needsRedraw = true;
 }
