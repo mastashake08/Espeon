@@ -1,8 +1,8 @@
 # Name,       Type, SubType, Offset,  Size,     Flags
 nvs,          data, nvs,     0x9000,  0x5000,
 otadata,      data, ota,     0xe000,  0x2000,
-factory,      app,  factory,   0x10000, 0x200000,
+factory,      app,  factory, 0x10000, 0x200000,
 Meshtastic,   app,  ota_0,   0x210000,0x200000,
-LoRABLE,      app,  ota_1,   0x410000,0x200000,
-WifiAP,       app,  ota_2,   0x610000,0x200000,
-spiffs,       data, spiffs,  0x810000,0x1F0000,
+LoRABLE,      app,  ota_1,   0x410000,0x180000,
+WifiAP,       app,  ota_2,   0x590000,0x180000,
+spiffs,       data, spiffs,  0x710000,0xF0000,

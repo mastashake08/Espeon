@@ -69,18 +69,19 @@ fi
 echo "  LoRABLE:    0x410000 -> $LORABLE_BIN"
 
 esptool.py --chip esp32s3 --port $PORT --baud 921600 \
-    --before=no_reset --after=hard_reset write_flash \
+    --before=no_reset --after=no_reset write_flash \
     0x410000 $LORABLE_BIN
+
+if [ $? -ne 0 ]; then
+    echo "LoRABLE upload failed!"
+    exit 1
+fi
+
+echo "  WifiAP:     0x590000 -> $WIFIAP_BIN"
 
 esptool.py --chip esp32s3 --port $PORT --baud 921600 \
     --before=no_reset --after=hard_reset write_flash \
-    0x410000 $LORABLE_BIN
-
-echo "  WifiAP:     0x610000 -> $WIFIAP_BIN"
-
-esptool.py --chip esp32s3 --port $PORT --baud 921600 \
-    --before=no_reset --after=hard_reset write_flash \
-    0x610000 $WIFIAP_BIN
+    0x590000 $WIFIAP_BIN
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -88,11 +89,11 @@ if [ $? -eq 0 ]; then
     echo "  - Factory menu at 0x010000"
     echo "  - Meshtastic at 0x210000"
     echo "  - LoRABLE at 0x410000"
-    echo "  - WifiAP at 0x610000"
+    echo "  - WifiAP at 0x590000"
     echo ""
     echo "The device will now boot into the factory menu."
 else
     echo ""
-    echo "✗ LoRABLE upload failed!"
+    echo "✗ WifiAP upload failed!"
     exit 1
 fi
