@@ -36,23 +36,25 @@ int clickCount = 0;
 bool lastButtonState = HIGH;
 unsigned long lastDebounceTime = 0;
 
+// Forward declaration
+void loadPartition(const char* label);
+
 void drawMenu() {
-  display.clearBuffer();
+  display.clear();
   
   // Title
-  display.setFont(u8g2_font_helvB08_tr);
-  display.drawStr(0, 10, "Factory Menu");
-  display.drawLine(0, 12, 128, 12);
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "Factory Menu");
+  display.drawHorizontalLine(0, 12, 128);
   
   // Battery voltage
   char batteryStr[16];
   float voltage = heltec_vbat();
   snprintf(batteryStr, sizeof(batteryStr), "%.2fV", voltage);
-  display.drawStr(90, 10, batteryStr);
+  display.drawString(90, 0, batteryStr);
   
   // Menu items
-  display.setFont(u8g2_font_6x10_tr);
-  int yPos = 26;
+  int yPos = 16;
   
   for (int i = 0; i < numPartitions && i < 4; i++) {
     int displayIndex = (selectedIndex / 4) * 4 + i;
@@ -60,24 +62,23 @@ void drawMenu() {
     
     // Highlight selected item
     if (displayIndex == selectedIndex) {
-      display.drawBox(0, yPos - 8, 128, 10);
-      display.setDrawColor(0);
-    }
-    
-    display.drawStr(2, yPos, appPartitions[displayIndex].name);
-    
-    if (displayIndex == selectedIndex) {
-      display.setDrawColor(1);
+      display.setColor(WHITE);
+      display.fillRect(0, yPos, 128, 11);
+      display.setColor(BLACK);
+      display.drawString(2, yPos, appPartitions[displayIndex].name);
+      display.setColor(WHITE);
+    } else {
+      display.drawString(2, yPos, appPartitions[displayIndex].name);
     }
     
     yPos += 12;
   }
   
   // Instructions at bottom
-  display.setFont(u8g2_font_micro_tr);
-  display.drawStr(0, 62, "Click:Nav DblClick:Load");
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 52, "Click:Nav  2x:Load");
   
-  display.sendBuffer();
+  display.display();
   needsRedraw = false;
 }
 
@@ -150,10 +151,10 @@ void handleButtonPress() {
 }
 
 void loadPartition(const char* label) {
-  display.clearBuffer();
-  display.setFont(u8g2_font_helvB08_tr);
-  display.drawStr(10, 30, "Loading...");
-  display.sendBuffer();
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(30, 25, "Loading...");
+  display.display();
   
   // Find the partition
   const esp_partition_t* partition = esp_partition_find_first(
@@ -164,10 +165,10 @@ void loadPartition(const char* label) {
   
   if (partition == NULL) {
     Serial.printf("Partition '%s' not found!\n", label);
-    display.clearBuffer();
-    display.drawStr(10, 25, "Partition");
-    display.drawStr(10, 35, "Not Found!");
-    display.sendBuffer();
+    display.clear();
+    display.drawString(20, 20, "Partition");
+    display.drawString(20, 35, "Not Found!");
+    display.display();
     delay(2000);
     needsRedraw = true;
     return;
@@ -179,10 +180,10 @@ void loadPartition(const char* label) {
   
   if (err != ESP_OK) {
     Serial.println("Invalid partition data!");
-    display.clearBuffer();
-    display.drawStr(10, 25, "Invalid");
-    display.drawStr(10, 35, "Partition!");
-    display.sendBuffer();
+    display.clear();
+    display.drawString(25, 20, "Invalid");
+    display.drawString(20, 35, "Partition!");
+    display.display();
     delay(2000);
     needsRedraw = true;
     return;
@@ -192,16 +193,16 @@ void loadPartition(const char* label) {
   err = esp_ota_set_boot_partition(partition);
   if (err == ESP_OK) {
     Serial.println("Rebooting to new partition...");
-    display.clearBuffer();
-    display.drawStr(10, 30, "Rebooting...");
-    display.sendBuffer();
+    display.clear();
+    display.drawString(20, 25, "Rebooting...");
+    display.display();
     delay(1000);
     esp_restart();
   } else {
     Serial.println("Failed to set boot partition!");
-    display.clearBuffer();
-    display.drawStr(10, 25, "Load Failed!");
-    display.sendBuffer();
+    display.clear();
+    display.drawString(15, 25, "Load Failed!");
+    display.display();
     delay(2000);
     needsRedraw = true;
   }
@@ -220,12 +221,12 @@ void setup() {
   pinMode(PRG_BUTTON, INPUT_PULLUP);
   
   // Display welcome screen
-  display.clearBuffer();
-  display.setFont(u8g2_font_helvB10_tr);
-  display.drawStr(15, 25, "Espeon");
-  display.setFont(u8g2_font_6x10_tr);
-  display.drawStr(10, 40, "Factory Menu v1.0");
-  display.sendBuffer();
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(35, 15, "Espeon");
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(10, 40, "Factory Menu v1.0");
+  display.display();
   delay(2000);
   
   // Print current partition info
