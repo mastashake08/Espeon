@@ -60,7 +60,7 @@ void drawMenu() {
   
   // Title
   display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 0, "Shake Loader");
+  display.drawString(0, 0, "Espeon Loader");
   display.drawHorizontalLine(0, 12, 128);
   
   // Battery voltage
@@ -107,7 +107,7 @@ void showConfirmation() {
   display.setFont(ArialMT_Plain_10);
   
   // Title
-  display.drawString(0, 0, "Load Partition?");
+  display.drawString(0, 0, "Load App?");
   display.drawHorizontalLine(0, 12, 128);
   
   // Selected app name
@@ -253,20 +253,30 @@ void loadPartition(const char* label) {
   Serial.println("Tip: Reset 3 times quickly to return to factory menu");
   
   // Set boot partition and restart
+  Serial.printf("Setting boot partition to: %s (subtype: 0x%x)\n", partition->label, partition->subtype);
   err = esp_ota_set_boot_partition(partition);
   if (err == ESP_OK) {
+    Serial.println("Boot partition set successfully!");
     Serial.println("Rebooting to new partition...");
     display.clear();
     display.drawString(20, 25, "Rebooting...");
     display.display();
     delay(1000);
+    Serial.println("Calling esp_restart() now...");
+    Serial.flush();
     esp_restart();
+    // Should never reach here
+    Serial.println("ERROR: esp_restart() returned!");
   } else {
-    Serial.println("Failed to set boot partition!");
+    Serial.printf("Failed to set boot partition! Error: 0x%x\n", err);
     display.clear();
-    display.drawString(15, 25, "Load Failed!");
+    display.drawString(15, 20, "Load Failed!");
+    display.setFont(ArialMT_Plain_10);
+    char errMsg[32];
+    snprintf(errMsg, sizeof(errMsg), "Error: 0x%x", err);
+    display.drawString(15, 35, errMsg);
     display.display();
-    delay(2000);
+    delay(3000);
     needsRedraw = true;
   }
 }
