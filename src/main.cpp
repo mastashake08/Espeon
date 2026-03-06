@@ -281,6 +281,19 @@ void setup() {
   pinMode(PRG_BUTTON, INPUT_PULLUP);
   delay(50);
   
+  // Initialize display EARLY so we can show boot status
+  pinMode(VEXT_CTRL, OUTPUT);
+  digitalWrite(VEXT_CTRL, LOW);  // Power on display
+  delay(100);
+  heltec_setup();  // This initializes I2C, display, and other peripherals
+  delay(100);
+  
+  // Show early boot message
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "Espeon Booting...");
+  display.display();
+  
   // Check for PRG button held during boot (force return to factory)
   bool buttonHeld = (digitalRead(PRG_BUTTON) == LOW);
   
@@ -333,6 +346,16 @@ void setup() {
       Serial.printf("Auto-loading default app: %s\n", defaultApp.c_str());
       Serial.println("(Reset 3 times quickly to return to menu)");
       
+      // Show on display
+      display.clear();
+      display.setFont(ArialMT_Plain_10);
+      display.drawString(0, 10, "Auto-loading:");
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(0, 25, defaultApp.c_str());
+      display.setFont(ArialMT_Plain_10);
+      display.drawString(0, 45, "Hold PRG to cancel");
+      display.display();
+      
       // Give user 2 seconds to see the message, then load app
       delay(2000);
       
@@ -344,13 +367,43 @@ void setup() {
       );
       
       if (partition != NULL) {
-        esp_ota_set_boot_partition(partition);
-        Serial.println("Rebooting to default app...");
-        delay(500);
-        esp_restart();
+        // Validate that the partition contains a valid app
+        esp_app_desc_t app_desc;
+        esp_err_t err = esp_ota_get_partition_description(partition, &app_desc);
+        
+        if (err == ESP_OK) {
+          // Valid app found, boot into it
+          esp_ota_set_boot_partition(partition);
+          Serial.println("Rebooting to default app...");
+          display.clear();
+          display.drawString(20, 25, "Rebooting...");
+          display.display();
+          delay(500);
+          esp_restart();
+        } else {
+          // Invalid or empty partition - clear default and stay in menu
+          Serial.println("ERROR: Partition exists but contains no valid app!");
+          Serial.println("Clearing default app and staying in factory menu");
+          display.clear();
+          display.drawString(0, 15, "ERROR: Invalid");
+          display.drawString(0, 30, "partition!");
+          display.drawString(0, 45, "Clearing & staying");
+          display.display();
+          prefs.begin(BOOT_NAMESPACE, false);
+          prefs.putString(CURRENT_APP_KEY, "");  // Clear invalid default
+          prefs.end();
+          delay(2000);
+        }
       } else {
         Serial.println("ERROR: Default app partition not found!");
-        Serial.println("Staying in factory menu");
+        Serial.println("Clearing default app and staying in factory menu");
+        display.clear();
+        display.drawString(0, 20, "ERROR: Partition");
+        display.drawString(0, 35, "not found!");
+        display.display();
+        prefs.begin(BOOT_NAMESPACE, false);
+        prefs.putString(CURRENT_APP_KEY, "");  // Clear invalid default
+        prefs.end();
         delay(2000);
       }
     }
@@ -363,19 +416,6 @@ void setup() {
   
   // Get current running partition
   const esp_partition_t* current = esp_ota_get_running_partition();
-  
-  // Power on display (VEXT_CTRL must be LOW for display power)
-  pinMode(VEXT_CTRL, OUTPUT);
-  digitalWrite(VEXT_CTRL, LOW);
-  delay(100);
-  
-  // Initialize I2C for display
-  Wire.begin(OLED_SDA, OLED_SCL);
-  delay(100);
-  
-  // Initialize Heltec board (this sets up display and other peripherals)
-  heltec_setup();
-  delay(100);
   
   // Display welcome screen
   Serial.println("Displaying welcome screen...");
