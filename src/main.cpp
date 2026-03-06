@@ -35,7 +35,8 @@ struct AppPartition {
 // Define available application partitions
 const AppPartition appPartitions[] = {
   {"Meshtastic", "Meshtastic", "Mesh Network"},
-  {"LoRABLE", "LoRABLE", "LoRa + BLE App"}
+  {"LoRABLE", "LoRABLE", "LoRa + BLE App"},
+  {"WifiAP", "WifiAP", "WiFi Access Point"}
 };
 const int numPartitions = sizeof(appPartitions) / sizeof(AppPartition);
 

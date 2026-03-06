@@ -34,6 +34,7 @@ fi
 PORT=$1
 MESHTASTIC_BIN=$2
 LORABLE_BIN=$3
+WIFIAP_BIN=$4
 
 echo "Building factory menu..."
 pio run
@@ -71,12 +72,23 @@ esptool.py --chip esp32s3 --port $PORT --baud 921600 \
     --before=no_reset --after=hard_reset write_flash \
     0x410000 $LORABLE_BIN
 
+esptool.py --chip esp32s3 --port $PORT --baud 921600 \
+    --before=no_reset --after=hard_reset write_flash \
+    0x410000 $LORABLE_BIN
+
+echo "  WifiAP:     0x610000 -> $WIFIAP_BIN"
+
+esptool.py --chip esp32s3 --port $PORT --baud 921600 \
+    --before=no_reset --after=hard_reset write_flash \
+    0x610000 $WIFIAP_BIN
+
 if [ $? -eq 0 ]; then
     echo ""
     echo "✓ All partitions uploaded successfully!"
     echo "  - Factory menu at 0x010000"
     echo "  - Meshtastic at 0x210000"
     echo "  - LoRABLE at 0x410000"
+    echo "  - WifiAP at 0x610000"
     echo ""
     echo "The device will now boot into the factory menu."
 else
