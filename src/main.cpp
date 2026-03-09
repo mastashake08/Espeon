@@ -56,6 +56,72 @@ int clickCount = 0;
 // Forward declaration
 void loadPartition(const char* label);
 
+void drawSpinningCircle(int centerX, int centerY, int radius, float angle, bool blink) {
+  // Only draw if blink is true (creates blinking effect)
+  if (!blink) return;
+  
+  // Draw spinning circle segments
+  int numSegments = 8;
+  for (int i = 0; i < numSegments; i++) {
+    float segmentAngle = angle + (i * TWO_PI / numSegments);
+    
+    // Calculate start and end points of each segment
+    int x1 = centerX + cos(segmentAngle) * radius;
+    int y1 = centerY + sin(segmentAngle) * radius;
+    int x2 = centerX + cos(segmentAngle) * (radius - 5);
+    int y2 = centerY + sin(segmentAngle) * (radius - 5);
+    
+    // Vary thickness by fading segments
+    if (i < numSegments / 2) {
+      display.drawLine(x1, y1, x2, y2);
+    }
+  }
+  
+  // Draw center circle
+  display.drawCircle(centerX, centerY, 3);
+  display.fillCircle(centerX, centerY, 2);
+}
+
+void showStartupAnimation() {
+  int centerX = 64;  // Center of 128px width
+  int centerY = 32;  // Center of 64px height
+  int radius = 20;
+  
+  unsigned long startTime = millis();
+  unsigned long duration = 2000;  // 2 seconds animation
+  float angle = 0;
+  
+  while (millis() - startTime < duration) {
+    display.clear();
+    
+    // Draw title
+    display.setFont(ArialMT_Plain_16);
+    int titleWidth = display.getStringWidth("Espeon");
+    display.drawString((128 - titleWidth) / 2, 2, "Espeon");
+    
+    // Blinking effect - blink every 250ms
+    bool blink = ((millis() / 250) % 2) == 0;
+    
+    // Draw spinning circle
+    drawSpinningCircle(centerX, centerY + 10, radius, angle, blink);
+    
+    // Draw subtitle
+    display.setFont(ArialMT_Plain_10);
+    int subtitleWidth = display.getStringWidth("Factory Menu v1.0");
+    display.drawString((128 - subtitleWidth) / 2, 54, "Factory Menu v1.0");
+    
+    display.display();
+    
+    // Increment angle for spinning effect
+    angle += 0.2;
+    if (angle >= TWO_PI) {
+      angle -= TWO_PI;
+    }
+    
+    delay(50);  // Smooth animation
+  }
+}
+
 void drawMenu() {
   display.clear();
   
@@ -428,15 +494,9 @@ void setup() {
   // Get current running partition
   const esp_partition_t* current = esp_ota_get_running_partition();
   
-  // Display welcome screen
-  Serial.println("Displaying welcome screen...");
-  display.clear();
-  display.setFont(ArialMT_Plain_16);
-  display.drawString(35, 15, "Espeon");
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(10, 40, "Factory Menu v1.0");
-  display.display();
-  delay(2000);
+  // Display welcome screen with spinning circle animation
+  Serial.println("Displaying startup animation...");
+  showStartupAnimation();
   
   // Print current partition info
   Serial.printf("Running from partition: %s\n", current->label);
